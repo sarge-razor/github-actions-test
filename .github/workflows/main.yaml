@@ -11,4 +11,7 @@ jobs:
        
       - name: Run a sample checkout action
         run: echo "Checking out your repo ran successfully"
+
+      - name: Simulating Error
+        run: echo "Error Taking Place"; exit 1
     
