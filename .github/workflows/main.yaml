@@ -10,5 +10,5 @@ jobs:
      - uses: actions/checkout@v3
      
      - name: Run a sample checkout action
-     - run: echo "Checking out your repo ran successfully"
+       run: echo "Checking out your repo ran successfully"
     
