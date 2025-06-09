@@ -4,11 +4,11 @@ on: push
 
 jobs:
   build:
-    run-ons: ubuntu-latest
+    runs-on: ubuntu-latest
 
     steps:
-     - uses: actions/checkout@v3
-     
-     - name: Run a sample checkout action
-       run: echo "Checking out your repo ran successfully"
+      - uses: actions/checkout@v3
+       
+      - name: Run a sample checkout action
+        run: echo "Checking out your repo ran successfully"
     
