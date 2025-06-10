@@ -1,5 +1,5 @@
 console.log("Hello world");
-a = 5;
-b = 7;
-sum = a+b;
-console.log(a+b);
+let a = 5;
+let b = 7;
+let sum = a + b;
+console.log(sum);
