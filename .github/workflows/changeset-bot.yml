@@ -1,0 +1,187 @@
+name: 🦋 Changeset Bot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  changeset-bot:
+    runs-on: ubuntu-latest
+    name: 📝 Add Changeset Comment
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Check for changesets
+        id: changeset-check
+        run: |
+          # Get the list of changeset files
+          changeset_files=$(find .changeset -name "*.md" -not -name "README.md" | head -10)
+          
+          if [ -z "$changeset_files" ]; then
+            echo "has_changesets=false" >> $GITHUB_OUTPUT
+            echo "No changesets found"
+          else
+            echo "has_changesets=true" >> $GITHUB_OUTPUT
+            echo "Found changesets:"
+            echo "$changeset_files"
+            
+            # Parse changeset information
+            changeset_info=""
+            package_changes=""
+            
+            for file in $changeset_files; do
+              echo "Processing $file"
+              
+              # Extract the changeset content
+              content=$(cat "$file")
+              
+              # Parse package changes (lines that start with package names and change types)
+              while IFS= read -r line; do
+                if [[ $line =~ ^\".*\":[[:space:]]*(patch|minor|major) ]]; then
+                  package_name=$(echo "$line" | sed 's/^"\(.*\)": .*/\1/')
+                  change_type=$(echo "$line" | sed 's/.*: \(.*\)/\1/')
+                  # Capitalize first letter
+                  change_type=$(echo "$change_type" | sed 's/./\U&/')
+                  package_changes="${package_changes}| $package_name | $change_type |\n"
+                fi
+              done <<< "$content"
+            done
+            
+            # Remove trailing newline
+            package_changes=$(echo -e "$package_changes" | sed '$d')
+            
+            echo "package_changes<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$package_changes" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: steps.changeset-check.outputs.has_changesets == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: pull_number } = context.issue;
+            
+            // Get the latest commit SHA
+            const latestCommit = context.payload.pull_request.head.sha.substring(0, 7);
+            
+            const packageChanges = `${{ steps.changeset-check.outputs.package_changes }}`;
+            
+            let tableRows = '';
+            if (packageChanges.trim()) {
+              tableRows = packageChanges;
+            } else {
+              tableRows = '| No packages detected | - |';
+            }
+            
+            const commentBody = `🦋 **Changeset detected**
+            
+            Latest commit: \`${latestCommit}\`
+            
+            The changes in this PR will be included in the next version bump.
+            
+            ▼ **This PR includes changesets to release 1 package**
+            
+            | Name | Type |
+            | ---- | ---- |
+            ${tableRows}
+            
+            <sub>Not sure what this means? [Click here to learn what changesets are](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md).</sub>
+            
+            <sub>[Click here if you're a maintainer who wants to add another changeset to this PR](https://github.com/${owner}/${repo}/new/main?filename=.changeset/empty.md)</sub>`;
+
+            // Check if a comment already exists
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: pull_number,
+            });
+
+            const existingComment = comments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              comment.body.includes('🦋 **Changeset detected**')
+            );
+
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull_number,
+                body: commentBody
+              });
+            }
+
+      - name: Comment when no changesets
+        if: steps.changeset-check.outputs.has_changesets == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { number: pull_number } = context.issue;
+            
+            const commentBody = `🦋 **No changesets detected**
+            
+            This PR doesn't include any changesets. If this change should result in a version bump, please add a changeset by running:
+            
+            \`\`\`bash
+            yarn changeset
+            \`\`\`
+            
+            <sub>[Learn more about changesets](https://github.com/changesets/changesets/blob/main/docs/adding-a-changeset.md)</sub>`;
+
+            // Check if a changeset comment already exists
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number: pull_number,
+            });
+
+            const existingComment = comments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              (comment.body.includes('🦋 **Changeset detected**') || comment.body.includes('🦋 **No changesets detected**'))
+            );
+
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pull_number,
+                body: commentBody
+              });
+            } 
